@@ -96,19 +96,21 @@ export const getMe = async (req, res) => {
 // @route   PUT /api/auth/profile
 export const updateProfile = async (req, res) => {
   try {
-    const { phone, bio, status, avatar, emergencyContact, designation } = req.body;
+    const { name, department, phone, bio, status, avatar, emergencyContact, designation } = req.body;
     const user = await User.findById(req.user.id);
 
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    if (phone !== undefined) user.phone = phone;
+    if (name !== undefined && name.trim()) user.name = name.trim();
+    if (department !== undefined) user.department = department.trim();
+    if (phone !== undefined) user.phone = phone.trim();
     if (bio !== undefined) user.bio = bio;
     if (status !== undefined) user.status = status;
     if (avatar !== undefined) user.avatar = avatar;
     if (emergencyContact !== undefined) user.emergencyContact = emergencyContact;
-    if (designation !== undefined) user.designation = designation;
+    if (designation !== undefined) user.designation = designation.trim();
 
     await user.save();
 
