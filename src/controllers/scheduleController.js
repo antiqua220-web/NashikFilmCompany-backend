@@ -10,9 +10,27 @@ export const getSchedules = async (req, res) => {
     const { projectId, upcoming, status, startDate, endDate } = req.query;
     const filter = {};
 
-    if (projectId && projectId !== 'undefined' && projectId !== 'null' && projectId !== 'all') {
+    if (req.user && req.user.role === 'boss') {
+      const myProjects = await Project.find({ createdBy: req.user._id }).select('_id');
+      const myProjectIds = myProjects.map((p) => p._id);
+
+      if (myProjectIds.length === 0) {
+        return res.status(200).json({ success: true, count: 0, schedules: [] });
+      }
+
+      if (projectId && projectId !== 'undefined' && projectId !== 'null' && projectId !== 'all') {
+        const isMine = myProjectIds.some((id) => id.toString() === projectId.toString());
+        if (!isMine) {
+          return res.status(200).json({ success: true, count: 0, schedules: [] });
+        }
+        filter.project = projectId;
+      } else {
+        filter.project = { $in: myProjectIds };
+      }
+    } else if (projectId && projectId !== 'undefined' && projectId !== 'null' && projectId !== 'all') {
       filter.project = projectId;
     }
+
     if (status && status !== 'undefined' && status !== 'null' && status !== 'all') {
       filter.status = status;
     }
@@ -46,12 +64,19 @@ export const getSchedules = async (req, res) => {
 export const getScheduleById = async (req, res) => {
   try {
     const schedule = await ShootSchedule.findById(req.params.id)
-      .populate('project', 'title code status primaryLocation coverImage budget clientOrStudio')
+      .populate('project', 'title code status primaryLocation coverImage budget clientOrStudio createdBy')
       .populate('requiredCrew.user', 'name email department designation avatar status phone bio emergencyContact')
       .populate('createdBy', 'name email role');
 
     if (!schedule) {
       return res.status(404).json({ success: false, message: 'Shoot schedule not found' });
+    }
+
+    if (req.user && req.user.role === 'boss') {
+      const ownerId = schedule.project?.createdBy?._id?.toString() || schedule.project?.createdBy?.toString();
+      if (ownerId && ownerId !== req.user._id.toString()) {
+        return res.status(404).json({ success: false, message: 'Shoot schedule not found' });
+      }
     }
 
     res.status(200).json({
@@ -97,6 +122,13 @@ export const createSchedule = async (req, res) => {
     const projectDoc = await Project.findById(project);
     if (!projectDoc) {
       return res.status(404).json({ success: false, message: 'Referenced project does not exist' });
+    }
+
+    if (req.user && req.user.role === 'boss') {
+      const ownerId = projectDoc.createdBy?._id?.toString() || projectDoc.createdBy?.toString();
+      if (ownerId !== req.user._id.toString()) {
+        return res.status(403).json({ success: false, message: 'Forbidden: You can only create call sheets for your own projects.' });
+      }
     }
 
     // Determine day number automatically if not passed
@@ -152,10 +184,17 @@ export const createSchedule = async (req, res) => {
 // @route   PUT /api/schedules/:id
 export const updateSchedule = async (req, res) => {
   try {
-    let schedule = await ShootSchedule.findById(req.params.id);
+    let schedule = await ShootSchedule.findById(req.params.id).populate('project');
 
     if (!schedule) {
       return res.status(404).json({ success: false, message: 'Shoot schedule not found' });
+    }
+
+    if (req.user && req.user.role === 'boss') {
+      const ownerId = schedule.project?.createdBy?._id?.toString() || schedule.project?.createdBy?.toString();
+      if (ownerId && ownerId !== req.user._id.toString()) {
+        return res.status(403).json({ success: false, message: 'Forbidden: You cannot modify call sheets of another boss.' });
+      }
     }
 
     schedule = await ShootSchedule.findByIdAndUpdate(req.params.id, req.body, {
@@ -186,10 +225,17 @@ export const updateSchedule = async (req, res) => {
 // @route   DELETE /api/schedules/:id
 export const deleteSchedule = async (req, res) => {
   try {
-    const schedule = await ShootSchedule.findById(req.params.id);
+    const schedule = await ShootSchedule.findById(req.params.id).populate('project');
 
     if (!schedule) {
       return res.status(404).json({ success: false, message: 'Shoot schedule not found' });
+    }
+
+    if (req.user && req.user.role === 'boss') {
+      const ownerId = schedule.project?.createdBy?._id?.toString() || schedule.project?.createdBy?.toString();
+      if (ownerId && ownerId !== req.user._id.toString()) {
+        return res.status(403).json({ success: false, message: 'Forbidden: You cannot delete call sheets of another boss.' });
+      }
     }
 
     await schedule.deleteOne();

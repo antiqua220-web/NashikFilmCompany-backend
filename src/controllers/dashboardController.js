@@ -8,18 +8,27 @@ import { Activity } from '../models/Activity.js';
 // @route   GET /api/dashboard/boss
 export const getBossDashboard = async (req, res) => {
   try {
-    const totalProjects = await Project.countDocuments();
-    // Count active projects as all projects not explicitly wrapped or archived
+    const bossId = req.user._id;
+    const bossFilter = { createdBy: bossId };
+
+    const totalProjects = await Project.countDocuments(bossFilter);
+    // Count active projects as all projects belonging to this boss not explicitly wrapped or archived
     const activeProjects = await Project.countDocuments({
+      ...bossFilter,
       status: { $nin: ['archived', 'wrapped'] },
     });
-    const inProductionProjects = await Project.countDocuments({ status: 'production' });
+    const inProductionProjects = await Project.countDocuments({
+      ...bossFilter,
+      status: 'production',
+    });
 
-    // Financial calculations & all projects enriched with metrics
-    const allProjects = await Project.find()
+    // Projects owned by this boss enriched with metrics
+    const allProjects = await Project.find(bossFilter)
       .populate('createdBy', 'name email role')
       .populate('assignedCrew.user', 'name email department designation avatar status phone')
       .sort({ updatedAt: -1 });
+
+    const projectIds = allProjects.map((p) => p._id);
 
     const totalBudget = allProjects.reduce((acc, p) => acc + (p.budget || 0), 0);
     const totalSpent = allProjects.reduce((acc, p) => acc + (p.spent || 0), 0);
@@ -44,40 +53,68 @@ export const getBossDashboard = async (req, res) => {
       })
     );
 
-    // Crew statistics
-    const totalCrew = await User.countDocuments({ role: 'employee' });
-    const onSetCrew = await User.countDocuments({ status: 'on-set' });
-
-    // Task breakdown
-    const taskStats = await Task.aggregate([
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 },
-        },
-      },
-    ]);
-
-    const taskMap = { todo: 0, in_progress: 0, review: 0, completed: 0, blocked: 0 };
-    taskStats.forEach((t) => {
-      taskMap[t._id] = t.count;
+    // Crew statistics for this boss's productions
+    const assignedCrewSet = new Set();
+    allProjects.forEach((p) => {
+      (p.assignedCrew || []).forEach((c) => {
+        const uid = c.user?._id ? c.user._id.toString() : c.user?.toString();
+        if (uid) assignedCrewSet.add(uid);
+      });
     });
 
-    const urgentTasks = await Task.find({ priority: 'urgent', status: { $ne: 'completed' } })
-      .populate('project', 'title code')
-      .populate('assignedTo', 'name department avatar')
-      .limit(5);
+    const totalCrew = assignedCrewSet.size;
+    const onSetCrew = totalCrew > 0
+      ? await User.countDocuments({ _id: { $in: Array.from(assignedCrewSet) }, status: 'on-set' })
+      : 0;
 
-    // Upcoming shoot days (next 14 days)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const upcomingShoots = await ShootSchedule.find({ date: { $gte: today } })
-      .populate('project', 'title code')
-      .sort({ date: 1 })
-      .limit(6);
+    // Task breakdown for this boss's productions
+    const taskMap = { todo: 0, in_progress: 0, review: 0, completed: 0, blocked: 0 };
+    let urgentTasks = [];
+    let upcomingShoots = [];
 
-    // Recent activities
-    const recentActivities = await Activity.find()
+    if (projectIds.length > 0) {
+      const taskStats = await Task.aggregate([
+        { $match: { project: { $in: projectIds } } },
+        {
+          $group: {
+            _id: '$status',
+            count: { $sum: 1 },
+          },
+        },
+      ]);
+
+      taskStats.forEach((t) => {
+        taskMap[t._id] = t.count;
+      });
+
+      urgentTasks = await Task.find({
+        project: { $in: projectIds },
+        priority: 'urgent',
+        status: { $ne: 'completed' },
+      })
+        .populate('project', 'title code')
+        .populate('assignedTo', 'name department avatar')
+        .limit(5);
+
+      // Upcoming shoot days (next 14 days)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      upcomingShoots = await ShootSchedule.find({
+        project: { $in: projectIds },
+        date: { $gte: today },
+      })
+        .populate('project', 'title code')
+        .sort({ date: 1 })
+        .limit(6);
+    }
+
+    // Recent activities for this boss's projects or created by this boss
+    const recentActivities = await Activity.find({
+      $or: [
+        { project: { $in: projectIds } },
+        { user: bossId },
+      ],
+    })
       .populate('user', 'name avatar role')
       .populate('project', 'title code')
       .sort({ createdAt: -1 })

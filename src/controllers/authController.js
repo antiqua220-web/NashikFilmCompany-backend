@@ -56,14 +56,23 @@ export const login = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Please provide email and password' });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
+    const cleanEmail = (email || '').toLowerCase().trim();
+    const user = await User.findOne({ email: cleanEmail }).select('+password');
     if (!user) {
-      return res.status(401).json({ success: false, message: 'Invalid credentials. User not found.' });
+      return res.status(404).json({
+        success: false,
+        errorCode: 'ACCOUNT_NOT_FOUND',
+        message: `No studio account found with email "${cleanEmail}". Please check your email or join the production team.`,
+      });
     }
 
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
-      return res.status(401).json({ success: false, message: 'Invalid credentials. Password incorrect.' });
+      return res.status(401).json({
+        success: false,
+        errorCode: 'INVALID_CREDENTIALS',
+        message: 'Invalid password for this studio account. Please check your credentials and try again.',
+      });
     }
 
     const token = generateToken(user._id);
@@ -83,6 +92,13 @@ export const login = async (req, res) => {
 export const getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        errorCode: 'ACCOUNT_NOT_FOUND',
+        message: 'Account not found. The user account belonging to this session no longer exists.',
+      });
+    }
     res.status(200).json({
       success: true,
       user: user.toSafeObject(),

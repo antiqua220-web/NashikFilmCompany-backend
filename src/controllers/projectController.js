@@ -26,7 +26,11 @@ export const getProjects = async (req, res) => {
       ];
     }
 
-    // If employee, they can see all projects or assigned ones
+    // Boss users only see their own projects; if they own none, they see empty list
+    if (req.user && req.user.role === 'boss') {
+      filter.createdBy = req.user._id;
+    }
+
     const projects = await Project.find(filter)
       .populate('createdBy', 'name email role')
       .populate('assignedCrew.user', 'name email department designation avatar status phone')
@@ -73,6 +77,14 @@ export const getProjectById = async (req, res) => {
 
     if (!project) {
       return res.status(404).json({ success: false, message: 'Project not found' });
+    }
+
+    // Boss users can only access their own projects
+    if (req.user && req.user.role === 'boss') {
+      const ownerId = project.createdBy?._id?.toString() || project.createdBy?.toString();
+      if (ownerId !== req.user._id.toString()) {
+        return res.status(404).json({ success: false, message: 'Project not found' });
+      }
     }
 
     const schedules = await ShootSchedule.find({ project: project._id })
@@ -200,6 +212,13 @@ export const updateProject = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
 
+    if (req.user && req.user.role === 'boss') {
+      const ownerId = project.createdBy?._id?.toString() || project.createdBy?.toString();
+      if (ownerId !== req.user._id.toString()) {
+        return res.status(403).json({ success: false, message: 'Forbidden: You cannot modify projects owned by another studio head.' });
+      }
+    }
+
     project = await Project.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
       runValidators: true,
@@ -232,6 +251,13 @@ export const deleteProject = async (req, res) => {
 
     if (!project) {
       return res.status(404).json({ success: false, message: 'Project not found' });
+    }
+
+    if (req.user && req.user.role === 'boss') {
+      const ownerId = project.createdBy?._id?.toString() || project.createdBy?.toString();
+      if (ownerId !== req.user._id.toString()) {
+        return res.status(403).json({ success: false, message: 'Forbidden: You cannot delete projects owned by another studio head.' });
+      }
     }
 
     // Cascade delete associated schedules and tasks

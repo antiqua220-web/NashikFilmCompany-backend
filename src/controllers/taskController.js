@@ -10,9 +10,29 @@ export const getTasks = async (req, res) => {
     const { projectId, assignedTo, status, priority, category, myTasks } = req.query;
     const filter = {};
 
-    if (projectId && projectId !== 'undefined' && projectId !== 'null' && projectId !== 'all') {
-      filter.project = projectId;
+    if (req.user && req.user.role === 'boss') {
+      const myProjects = await Project.find({ createdBy: req.user._id }).select('_id');
+      const myProjectIds = myProjects.map((p) => p._id);
+
+      if (myProjectIds.length === 0) {
+        return res.status(200).json({ success: true, count: 0, tasks: [] });
+      }
+
+      if (projectId && projectId !== 'undefined' && projectId !== 'null' && projectId !== 'all') {
+        const isMine = myProjectIds.some((id) => id.toString() === projectId.toString());
+        if (!isMine) {
+          return res.status(200).json({ success: true, count: 0, tasks: [] });
+        }
+        filter.project = projectId;
+      } else {
+        filter.project = { $in: myProjectIds };
+      }
+    } else {
+      if (projectId && projectId !== 'undefined' && projectId !== 'null' && projectId !== 'all') {
+        filter.project = projectId;
+      }
     }
+
     if (status && status !== 'undefined' && status !== 'null' && status !== 'all') {
       filter.status = status;
     }
@@ -24,7 +44,7 @@ export const getTasks = async (req, res) => {
     }
 
     // If an employee requests "myTasks" or if they are an employee without explicit filter:
-    if (myTasks === 'true' || (req.user.role === 'employee' && !assignedTo && !projectId)) {
+    if (myTasks === 'true' || (req.user && req.user.role === 'employee' && !assignedTo && !projectId)) {
       filter.assignedTo = req.user._id;
     } else if (assignedTo) {
       filter.assignedTo = assignedTo;
@@ -62,6 +82,15 @@ export const getTaskById = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Task not found' });
     }
 
+    if (req.user && req.user.role === 'boss') {
+      const myProjects = await Project.find({ createdBy: req.user._id }).select('_id');
+      const myProjectIds = myProjects.map((p) => p._id.toString());
+      const taskProjectId = task.project?._id ? task.project._id.toString() : task.project?.toString();
+      if (!myProjectIds.includes(taskProjectId)) {
+        return res.status(404).json({ success: false, message: 'Task not found' });
+      }
+    }
+
     res.status(200).json({
       success: true,
       task,
@@ -92,6 +121,18 @@ export const createTask = async (req, res) => {
         success: false,
         message: 'Project, title, assigned crew member, and due date are required',
       });
+    }
+
+    const projectDoc = await Project.findById(project);
+    if (!projectDoc) {
+      return res.status(404).json({ success: false, message: 'Referenced project does not exist' });
+    }
+
+    if (req.user && req.user.role === 'boss') {
+      const ownerId = projectDoc.createdBy?._id?.toString() || projectDoc.createdBy?.toString();
+      if (ownerId !== req.user._id.toString()) {
+        return res.status(403).json({ success: false, message: 'Forbidden: You can only assign tasks to your own projects.' });
+      }
     }
 
     const task = await Task.create({
@@ -216,6 +257,16 @@ export const updateTask = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized to edit this task' });
     }
 
+    if (isBoss) {
+      const projectDoc = await Project.findById(task.project);
+      if (projectDoc) {
+        const ownerId = projectDoc.createdBy?._id?.toString() || projectDoc.createdBy?.toString();
+        if (ownerId !== req.user._id.toString()) {
+          return res.status(403).json({ success: false, message: 'Forbidden: You cannot modify tasks of another boss.' });
+        }
+      }
+    }
+
     // If employee, they can only update checklist or notes or status
     if (!isBoss) {
       if (req.body.checklist !== undefined) task.checklist = req.body.checklist;
@@ -258,6 +309,16 @@ export const deleteTask = async (req, res) => {
     const task = await Task.findById(req.params.id);
     if (!task) {
       return res.status(404).json({ success: false, message: 'Task not found' });
+    }
+
+    if (req.user && req.user.role === 'boss') {
+      const projectDoc = await Project.findById(task.project);
+      if (projectDoc) {
+        const ownerId = projectDoc.createdBy?._id?.toString() || projectDoc.createdBy?.toString();
+        if (ownerId !== req.user._id.toString()) {
+          return res.status(403).json({ success: false, message: 'Forbidden: You cannot delete tasks of another boss.' });
+        }
+      }
     }
 
     await task.deleteOne();

@@ -9,6 +9,9 @@ import projectRoutes from './routes/projectRoutes.js';
 import scheduleRoutes from './routes/scheduleRoutes.js';
 import taskRoutes from './routes/taskRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
+import gearRoutes from './routes/gearRoutes.js';
+import expenseRoutes from './routes/expenseRoutes.js';
+import noticeRoutes from './routes/noticeRoutes.js';
 
 // Ensure all Mongoose schemas are registered
 import './models/User.js';
@@ -16,6 +19,9 @@ import './models/Project.js';
 import './models/ShootSchedule.js';
 import './models/Task.js';
 import './models/Activity.js';
+import './models/GearItem.js';
+import './models/Expense.js';
+import './models/Notice.js';
 
 dotenv.config();
 
@@ -30,7 +36,8 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
-app.use(express.json());
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 app.use(morgan('dev'));
 
 // Health / Status Check
@@ -50,6 +57,9 @@ app.use('/api/projects', projectRoutes);
 app.use('/api/schedules', scheduleRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/gear', gearRoutes);
+app.use('/api/expenses', expenseRoutes);
+app.use('/api/notices', noticeRoutes);
 
 // 404 Handler
 app.use((req, res) => {
