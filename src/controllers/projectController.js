@@ -143,6 +143,7 @@ export const createProject = async (req, res) => {
       targetWrapDate,
       coverImage,
       assignedCrew,
+      departmentBudgets,
       tags,
     } = req.body;
 
@@ -177,6 +178,7 @@ export const createProject = async (req, res) => {
       targetWrapDate: targetWrapDate || new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
       coverImage: coverImage ? coverImage.trim() : '',
       assignedCrew: assignedCrew || [],
+      departmentBudgets: departmentBudgets || [],
       createdBy: req.user._id,
       tags: tags || [],
     });

@@ -41,6 +41,19 @@ const projectSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    departmentBudgets: [
+      {
+        department: {
+          type: String,
+          required: true,
+          trim: true,
+        },
+        allocated: {
+          type: Number,
+          default: 0,
+        },
+      },
+    ],
     currency: {
       type: String,
       default: 'INR',
