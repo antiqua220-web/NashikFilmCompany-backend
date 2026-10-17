@@ -1,17 +1,21 @@
 import jwt from 'jsonwebtoken';
 import { User } from '../models/User.js';
 
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET || 'shootsync_nashik_secret_production_key_2026_supersecure', {
-    expiresIn: process.env.JWT_EXPIRES_IN || '30d',
-  });
+const generateToken = (id, sessionId) => {
+  return jwt.sign(
+    { id, sessionId },
+    process.env.JWT_SECRET || 'shootsync_nashik_secret_production_key_2026_supersecure',
+    {
+      expiresIn: process.env.JWT_EXPIRES_IN || '30d',
+    }
+  );
 };
 
 // @desc    Register a new user
 // @route   POST /api/auth/register
 export const register = async (req, res) => {
   try {
-    const { name, email, password, role, department, designation, phone, bio, avatar } = req.body;
+    const { name, email, password, role, department, designation, phone, bio, avatar, deviceId } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ success: false, message: 'Please provide name, email, and password' });
@@ -22,6 +26,7 @@ export const register = async (req, res) => {
       return res.status(400).json({ success: false, message: 'An account with this email already exists' });
     }
 
+    const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
     const user = await User.create({
       name,
       email: email.toLowerCase(),
@@ -32,9 +37,12 @@ export const register = async (req, res) => {
       phone: phone || '',
       bio: bio || '',
       avatar: avatar || `https://api.dicebear.com/7.x/bottts/png?seed=${encodeURIComponent(name)}`,
+      currentSessionId: sessionId,
+      lastLoginDevice: req.headers['user-agent'] || deviceId || 'Mobile Device',
+      lastLoginAt: new Date(),
     });
 
-    const token = generateToken(user._id);
+    const token = generateToken(user._id, sessionId);
 
     res.status(201).json({
       success: true,
@@ -50,7 +58,7 @@ export const register = async (req, res) => {
 // @route   POST /api/auth/login
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, deviceId } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ success: false, message: 'Please provide email and password' });
@@ -75,12 +83,37 @@ export const login = async (req, res) => {
       });
     }
 
-    const token = generateToken(user._id);
+    // Single-device policy: Generate a unique session ID for this new login.
+    // Any previous device holding an older token will be automatically invalidated.
+    const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    user.currentSessionId = sessionId;
+    user.lastLoginDevice = req.headers['user-agent'] || deviceId || 'Mobile Device';
+    user.lastLoginAt = new Date();
+    await user.save({ validateBeforeSave: false });
+
+    const token = generateToken(user._id, sessionId);
 
     res.status(200).json({
       success: true,
       token,
       user: user.toSafeObject(),
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Logout user / terminate active device session
+// @route   POST /api/auth/logout
+export const logout = async (req, res) => {
+  try {
+    if (req.user) {
+      req.user.currentSessionId = null;
+      await req.user.save({ validateBeforeSave: false });
+    }
+    res.status(200).json({
+      success: true,
+      message: 'Active device session terminated successfully',
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

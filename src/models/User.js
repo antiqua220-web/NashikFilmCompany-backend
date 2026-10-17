@@ -59,6 +59,19 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    currentSessionId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    lastLoginDevice: {
+      type: String,
+      default: '',
+    },
+    lastLoginAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

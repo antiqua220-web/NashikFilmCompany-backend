@@ -35,6 +35,7 @@ export const getGearItems = async (req, res) => {
 
     const items = await GearItem.find(filter)
       .populate('assignedTo', 'name email designation department avatar phone status')
+      .populate('addedBy', 'name email designation department role')
       .populate('project', 'title code')
       .sort({ updatedAt: -1 });
 
@@ -57,6 +58,7 @@ export const getGearItemById = async (req, res) => {
   try {
     const item = await GearItem.findById(req.params.id)
       .populate('assignedTo', 'name email designation department avatar phone')
+      .populate('addedBy', 'name email designation department role')
       .populate('project', 'title code')
       .populate('incidents.reportedBy', 'name email designation avatar');
 
@@ -83,14 +85,29 @@ export const getGearItemById = async (req, res) => {
 // @route   POST /api/gear
 export const createGearItem = async (req, res) => {
   try {
-    const item = await GearItem.create(req.body);
+    const gearData = {
+      ...req.body,
+      addedBy: req.user?._id || req.body.addedBy,
+      addedByName: req.user?.name || req.body.addedByName || 'Production',
+      addedByRole: req.user?.role || req.body.addedByRole || 'boss',
+    };
+    if (req.user && req.user.role === 'employee' && !gearData.assignedTo) {
+      gearData.assignedTo = req.user._id;
+    }
+    const item = await GearItem.create(gearData);
 
-    await Activity.create({
-      user: req.user._id,
-      action: 'ADDED_GEAR_ITEM',
-      title: `Registered gear "${item.name}" (${item.tagId})`,
-      details: `Category: ${item.category} | Serial: ${item.serialNo || 'N/A'}`,
-    });
+    if (req.user?._id) {
+      try {
+        await Activity.create({
+          user: req.user._id,
+          action: 'ADDED_GEAR_ITEM',
+          title: `Registered gear "${item.name}" (${item.tagId})`,
+          details: `Category: ${item.category} | Serial: ${item.serialNo || 'N/A'}`,
+        });
+      } catch (actErr) {
+        console.warn('Activity log error:', actErr.message);
+      }
+    }
 
     res.status(201).json({
       success: true,

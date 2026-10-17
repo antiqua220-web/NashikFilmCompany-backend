@@ -85,6 +85,21 @@ const gearItemSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    addedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+      index: true,
+    },
+    addedByName: {
+      type: String,
+      default: '',
+    },
+    addedByRole: {
+      type: String,
+      enum: ['boss', 'employee', ''],
+      default: '',
+    },
     assignedDate: {
       type: Date,
       default: null,

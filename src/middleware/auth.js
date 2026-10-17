@@ -22,8 +22,26 @@ export const protect = async (req, res, next) => {
     if (!user) {
       return res.status(401).json({
         success: false,
+        errorCode: 'ACCOUNT_NOT_FOUND',
         message: 'The user belonging to this token no longer exists.',
       });
+    }
+
+    // Single-device policy check:
+    // If the token contains a sessionId and the user has a currentSessionId in DB,
+    // they must match. If another device logged in, currentSessionId will differ.
+    if (decoded.sessionId && user.currentSessionId && user.currentSessionId !== decoded.sessionId) {
+      return res.status(401).json({
+        success: false,
+        errorCode: 'SESSION_TERMINATED_MULTIPLE_DEVICES',
+        message: 'Your account was logged in on another device. Only 1 active device session is permitted at a time.',
+      });
+    }
+
+    // Adopt session if user had none set yet
+    if (!user.currentSessionId && decoded.sessionId) {
+      user.currentSessionId = decoded.sessionId;
+      await user.save({ validateBeforeSave: false });
     }
 
     req.user = user;
